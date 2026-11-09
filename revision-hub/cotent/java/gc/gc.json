@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "topicId": "gc",
+  "title": "Garbage Collection & Tuning",
+  "recap": [
+    "GC frees memory you no longer use: an object dies when nothing reachable still points to it. Reachability is traced from GC roots (thread stacks, static fields, JNI references).",
+    "Heap is generational: Young (Eden + 2 Survivors) and Old. Most objects die young — the generational hypothesis — which is why copying the few survivors out of a full Eden is fast.",
+    "Minor GC clears the young gen (small pauses). Full/major GC touches the whole heap (big pauses). Objects that survive enough minor cycles get promoted to Old.",
+    "Collectors in one line each: Serial (tiny heaps), Parallel (throughput, pauses OK), G1 (default since Java 9 — region-based, pause-time target), ZGC / Shenandoah (sub-millisecond pauses, huge heaps, nearly everything concurrent).",
+    "Tuning is always a trade: shorter pauses vs higher throughput vs memory footprint. Pick the axis that matches your SLA."
+  ],
+  "standard": [
+    "How liveness is decided: the collector walks a reachability graph from GC roots. An unreachable object is garbage regardless of finalize(), Cleaner, or references — those are callbacks, not resurrection magic.",
+    "G1 in practice: splits the heap into equal regions (~2048 of them). Young GC evacuates live regions; a concurrent mark cycle finds region liveness, then mixed GCs collect the most garbage-rich old regions first.",
+    "The flag interviewers love: -XX:MaxGCPauseMillis=200 — G1's soft pause goal. G1 shrinks young gen and defers collection to chase it. If your app allocates faster than G1 can keep up, G1 breaks its promise and you see back-to-back GCs.",
+    "When to move beyond G1: pause requirements in single-digit milliseconds (trading, real-time) or heaps over ~16-32 GB with allocation pressure → ZGC or Shenandoah. G1 remains the sensible default for most services.",
+    "Reading the tea leaves: watch GC logs for pause times, allocation rate (MB/s between GCs), and heap-after-GC trend. Heap-after-GC that keeps climbing = a leak; growing pauses = promotion problem.",
+    "The classic leaks: static collections that only grow, ThreadLocal values never removed in pooled threads, unclosed resources, classloader leaks in redeploy-happy app servers, and listener registries nobody unsubscribes from.",
+    "Metaspace is off-heap and unbounded by default — set -XX:MaxMetaspaceSize to get a clear failure instead of a slow death."
+  ],
+  "deep": [
+    "G1 concurrent marking uses SATB (snapshot-at-the-beginning): writes to objects during marking are caught by write barriers and logged, so the mark stays a consistent snapshot while the app runs.",
+    "Humongous objects: any object ≥ 50% of a region size is allocated directly in contiguous old regions — the #1 silent G1 killer. Large byte[] or String[] → fragmentation and premature mixed-GC trouble. Fix: raise -XX:G1HeapRegionSize.",
+    "ZGC mechanics: colored pointers store GC metadata bits inside the 64-bit reference itself; a load barrier on every reference load self-heals pointers lazily, letting mark, relocate, and remap run almost fully concurrently. Pauses are O(1) — independent of heap size.",
+    "Shenandoah achieves the same via forward pointers, letting the app read an object while it's being moved.",
+    "Allocation ergonomics: TLABs (thread-local allocation buffers) make Eden bump-pointer allocation nearly free — 'allocation is expensive' is a half-truth. Promotion is governed by tenuring thresholds the JVM adapts dynamically.",
+    "The promotion-push chain to remember: high allocation × survival → young gen fills faster → G1 shrinks young gen to hold the pause goal → early promotion → old gen fills → concurrent mark cycle kicks off (IHOP: -XX:InitiatingHeapOccupancyPercent, default 45%).",
+    "GC root types worth naming in a senior interview: live thread stacks, static fields, JNI global refs, JVM-internal references (system classloader), and objects pinned by monitors."
+  ],
+  "gotchas": [
+    "System.gc() is a hint. Worse: -XX:+DisableExplicitGC breaks NIO direct-memory cleanup (DirectByteBuffers rely on a GC-triggered cleaner) — pair it with -XX:MaxDirectMemorySize.",
+    "Finalization is deprecated and non-deterministic; prefer try-with-resources and java.lang.ref.Cleaner — and never allocate inside a cleaner.",
+    "Soft references are cleared only under memory pressure — a SoftReference cache can make the heap look fine while pauses spike from reference churn.",
+    "CMS was removed in Java 14 — naming it as a current collector is an instant red flag.",
+    "G1's pause target is a soft goal, not a guarantee; aggressive MaxGCPauseMillis values cause thrashing."
+  ],
+  "flashcards": [
+    { "q": "What are GC roots?", "a": "Thread stacks, static fields, JNI global refs, JVM-internal references (e.g., system classloader). Reachability is traced from these." },
+    { "q": "Why is minor GC fast?", "a": "Generational hypothesis: most young objects are dead. Eden is collected by copying the few survivors, not by sweeping the whole space." },
+    { "q": "What's a G1 humongous object?", "a": "An object ≥ 50% of region size; allocated in contiguous old regions, causing fragmentation and mixed-GC issues." },
+    { "q": "How does ZGC get sub-ms pauses?", "a": "Colored pointers + load barriers let mark/relocate/remap run concurrently; pause work is O(1), independent of heap size." },
+    { "q": "What does -XX:MaxGCPauseMillis actually do?", "a": "Sets G1's soft pause goal — G1 adjusts young-gen size and defers collections to chase it. Not a guarantee." },
+    { "q": "When do you leave G1 for ZGC/Shenandoah?", "a": "Single-digit-ms pause SLAs or very large heaps (16 GB+) with high allocation rates." },
+    { "q": "Why is a rising heap-after-GC trend bad even if pauses look fine?", "a": "It's the classic leak signature — the live set is growing; eventually the heap exhausts and pauses explode." },
+    { "q": "Safe way to disable System.gc()?", "a": "-XX:+DisableExplicitGC plus -XX:MaxDirectMemorySize, because direct ByteBuffers depend on a GC-triggered cleaner." }
+  ]
+}

@@ -5,31 +5,305 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Java Revision Hub ⚡</title>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 2rem; color: #1a1a2e; background: #fafafa; }
-  h1 { margin-bottom: .25rem; }
-  .tagline { color: #555; margin-bottom: 2rem; }
-  .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
-  .status { color: #0a7d38; font-weight: 600; }
-  code { background: #eee; padding: .15rem .35rem; border-radius: 4px; }
+  :root { --bg:#0f1220; --card:#1a1f35; --text:#e8eaf6; --muted:#9aa3c0; --accent:#6c8cff; --good:#2ecc8f; --bad:#ff6c7a; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,system-ui,sans-serif; margin:0; background:var(--bg); color:var(--text); }
+  header { padding:1rem; border-bottom:1px solid #262c47; position:sticky; top:0; background:var(--bg); z-index:5; }
+  header h1 { font-size:1.1rem; margin:0; display:flex; align-items:center; gap:.5rem; }
+  nav { display:flex; gap:.4rem; margin-top:.6rem; flex-wrap:wrap; }
+  nav a { color:var(--muted); text-decoration:none; padding:.35rem .7rem; border-radius:8px; font-size:.85rem; }
+  nav a.active, nav a:hover { background:var(--card); color:var(--text); }
+  main { max-width:760px; margin:0 auto; padding:1rem; }
+  .card { background:var(--card); border-radius:12px; padding:1.1rem; margin-bottom:1rem; }
+  h2 { font-size:1rem; margin:.2rem 0 .8rem; color:var(--accent); }
+  .muted { color:var(--muted); font-size:.85rem; }
+  label { display:block; font-size:.8rem; color:var(--muted); margin:.7rem 0 .25rem; }
+  input, select { width:100%; padding:.55rem; border-radius:8px; border:1px solid #2c3352; background:#12162a; color:var(--text); font-size:.95rem; }
+  .chips { display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.3rem; }
+  .chip { padding:.3rem .7rem; border-radius:999px; border:1px solid #2c3352; cursor:pointer; font-size:.8rem; color:var(--muted); }
+  .chip.on { background:var(--accent); color:#0f1220; border-color:var(--accent); font-weight:600; }
+  button.primary { width:100%; margin-top:1rem; padding:.7rem; border:none; border-radius:10px; background:var(--accent); color:#0f1220; font-weight:700; font-size:1rem; cursor:pointer; }
+  button.small { padding:.3rem .6rem; border-radius:8px; border:1px solid #2c3352; background:transparent; color:var(--muted); font-size:.75rem; cursor:pointer; }
+  .planItem { display:flex; justify-content:space-between; gap:.8rem; padding:.7rem 0; border-bottom:1px solid #262c47; }
+  .planItem:last-child { border-bottom:none; }
+  .planMeta { text-align:right; white-space:nowrap; }
+  .alloc { font-weight:700; color:var(--accent); }
+  .reason { font-size:.78rem; color:var(--muted); }
+  .topic { padding:.65rem 0; border-bottom:1px solid #262c47; }
+  .topic:last-child { border:none; }
+  .topicHead { display:flex; justify-content:space-between; align-items:center; gap:.5rem; cursor:pointer; }
+  .topicName { font-weight:600; }
+  .child .topicName { font-weight:400; padding-left:1.2rem; font-size:.9rem; }
+  .badges { display:flex; gap:.35rem; align-items:center; }
+  .badge { font-size:.68rem; padding:.15rem .5rem; border-radius:999px; background:#262c47; color:var(--muted); }
+  .wk { font-weight:700; }
+  .body { display:none; padding:.5rem 0 .8rem 1.2rem; font-size:.88rem; }
+  .open .body { display:block; }
+  .gotcha { padding:.3rem 0 .3rem 1.2rem; font-size:.88rem; list-style:disc; }
+  .stat { display:inline-block; margin-right:1.2rem; }
+  .stat b { font-size:1.3rem; }
 </style>
 </head>
 <body>
-<h1>Java Revision Hub ⚡</h1>
-<p class="tagline">Enter your interview date + available time → get a prioritized, minute-by-minute revision plan.</p>
+<header>
+  <h1>⚡ Java Revision Hub</h1>
+  <nav id="nav">
+    <a href="#dashboard">Dashboard</a>
+    <a href="#plan">Cram Plan</a>
+    <a href="#topics">Topics</a>
+    <a href="#morning">Morning-Of</a>
+    <a href="#settings">Settings</a>
+  </nav>
+</header>
+<main id="main"><div class="card">Loading…</div></main>
 
-<div class="card">
-  <p class="status">✅ Foundation deployed</p>
-  <p>The engine (cram plan + spaced repetition), the versioned store, and the topic taxonomy are live in this folder.</p>
-  <ul>
-    <li><code>engine.js</code> — cram-plan + SM-2 engine (pure functions, tested)</li>
-    <li><code>store.js</code> — your data: versioned, append-only, export/import</li>
-    <li><code>content/taxonomy.json</code> — 33 senior-Java topics, parent-linked</li>
-  </ul>
-</div>
+<script type="module">
+import { generatePlan, gotchaList, weakness, childrenOf, parentOf } from "./engine.js";
+import { load, addInterview, appendFumble, exportStore, importStore } from "./store.js";
 
-<div class="card">
-  <p><strong>Coming next:</strong> the app screens (dashboard, cram plan, topic pages, review) and the first cheat sheets.</p>
-  <p><strong>Your data never leaves your browser.</strong> No accounts, no tracking, no server.</p>
-</div>
+let topics = [];
+let store = load();
+let roleSel = ["BACKEND"];
+
+const main = document.getElementById("main");
+const now = () => new Date();
+
+async function boot() {
+  try {
+    const r = await fetch("taxonomy.json");
+    const t = await r.json();
+    topics = t.topics;
+  } catch (e) {
+    main.innerHTML = '<div class="card">Could not load taxonomy.json — check it exists in this folder.</div>';
+    return;
+  }
+  window.addEventListener("hashchange", route);
+  route();
+}
+
+function route() {
+  const page = (location.hash || "#dashboard").slice(1);
+  document.querySelectorAll("#nav a").forEach(a =>
+    a.classList.toggle("active", a.getAttribute("href") === "#" + page));
+  if (page === "plan") return renderPlan();
+  if (page === "topics") return renderTopics();
+  if (page === "morning") return renderMorning();
+  if (page === "settings") return renderSettings();
+  renderDashboard();
+}
+
+const topicById = (id) => topics.find((t) => t.id === id);
+const wk = (id) => Math.round(weakness(store.reviews, store.fumbles, id, now()) * 100);
+const wkColor = (v) => v >= 60 ? "var(--bad)" : v <= 35 ? "var(--good)" : "var(--text)";
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const ivs = (store.interviews || []).slice(-3).reverse();
+  const fumbled = [...new Set(store.fumbles.map((f) => f.topicId))];
+  const weak = topics
+    .map((t) => ({ t, w: wk(t.id) }))
+    .filter((x) => fumbled.includes(x.t.id) || store.reviews.some((r) => r.topicId === x.t.id))
+    .sort((a, b) => b.w - a.w).slice(0, 5);
+
+  main.innerHTML = `
+  <div class="card">
+    <h2>Your next interview</h2>
+    ${ivs.length === 0 ? '<p class="muted">None scheduled yet. Head to <a href="#plan" style="color:var(--accent)">Cram Plan</a> to add one.</p>' :
+      ivs.map((i) => `
+        <div class="topicHead">
+          <span class="topicName">${esc(i.company)}</span>
+          <span class="muted">${esc(i.roleTags.join(", "))} · ${esc(i.seniority)} · ${esc(i.prepTimeMin)} min</span>
+        </div>`).join("")}
+  </div>
+  <div class="card">
+    <h2>Your weak spots</h2>
+    ${weak.length === 0 ?
+      '<p class="muted">No history yet — your weakness map builds as you report fumbles on <a href="#topics" style="color:var(--accent)">Topics</a> and review cards.</p>' :
+      weak.map((x) => `
+        <div class="topicHead">
+          <span class="topicName">${esc(x.t.name)}</span>
+          <span class="wk" style="color:${wkColor(x.w)}">${x.w}% weak</span>
+        </div>`).join("")}
+  </div>
+  <div class="card">
+    <h2>Stats</h2>
+    <span class="stat"><b>${store.reviews.length}</b> <span class="muted">reviews</span></span>
+    <span class="stat"><b>${store.fumbles.length}</b> <span class="muted">fumbles</span></span>
+    <span class="stat"><b>${store.interviews.length}</b> <span class="muted">interviews</span></span>
+  </div>
+  <div class="card">
+    <h2>What is this?</h2>
+    <p class="muted">A free revision tool for senior Java devs. Enter your interview + available time → get a prioritized plan ranked by <i>ask probability × your weakness × time</i>. Your data lives only in this browser. <a href="#settings" style="color:var(--accent)">Export it</a> any time.</p>
+  </div>`;
+}
+
+// ── Cram Plan ─────────────────────────────────────────────────────────────────
+function renderPlan() {
+  main.innerHTML = `
+  <div class="card">
+    <h2>Plan my cram session</h2>
+    <label>Company</label>
+    <input id="company" placeholder="e.g. Razorpay">
+    <label>Role tags (pick what fits)</label>
+    <div class="chips" id="roles">
+      ${["BACKEND", "MICROSERVICES", "PRODUCT", "FINTECH"].map((r) =>
+        `<span class="chip ${roleSel.includes(r) ? "on" : ""}" data-r="${r}">${r}</span>`).join("")}
+    </div>
+    <label>Seniority</label>
+    <select id="sen"><option>MID</option><option selected>SENIOR</option><option>STAFF</option></select>
+    <label>Time available</label>
+    <select id="prep">
+      <option value="30">30 min — morning of</option>
+      <option value="120">2 hours — evening before</option>
+      <option value="360" selected>6 hours — night before</option>
+      <option value="600">10 hours — full day</option>
+    </select>
+    <button class="primary" id="go">⚡ Generate my plan</button>
+  </div>
+  <div id="planOut"></div>`;
+
+  main.querySelectorAll("#roles .chip").forEach((c) =>
+    c.onclick = () => {
+      const r = c.dataset.r;
+      roleSel = roleSel.includes(r) ? roleSel.filter((x) => x !== r) : [...roleSel, r];
+      c.classList.toggle("on");
+    });
+  main.querySelector("#go").onclick = () => {
+    const interview = {
+      company: main.querySelector("#company").value || "My next interview",
+      roleTags: roleSel, seniority: main.querySelector("#sen").value,
+      scheduledAt: new Date(Date.now() + 864e5).toISOString(),
+      prepTimeMin: parseInt(main.querySelector("#prep").value, 10),
+    };
+    addInterview(store, interview);
+    const plan = generatePlan(topics, interview, store.reviews, store.fumbles, now());
+    renderPlanResult(interview, plan);
+  };
+}
+
+function renderPlanResult(interview, plan) {
+  const el = document.getElementById("planOut");
+  el.innerHTML = `
+  <div class="card">
+    <h2>Your plan — ${esc(interview.company)} (${plan.plannedMin} of ${plan.totalMin} min)</h2>
+    ${plan.items.map((i) => {
+      const t = topicById(i.topicId);
+      return `
+      <div class="planItem">
+        <div>
+          <div class="topicName">${esc(t ? t.name : i.topicId)}</div>
+          <div class="reason">${esc(i.reason)}</div>
+        </div>
+        <div class="planMeta">
+          <span class="alloc">${i.allocMin} min</span><br>
+          <span class="badge">${i.activityType === "FLASHCARDS" ? "🃏 recall" : "📘 revise"}</span>
+        </div>
+      </div>`;
+    }).join("")}
+    <p class="muted" style="margin-top:.8rem">Start at the top. Weak spots come first — that's deliberate.</p>
+  </div>`;
+}
+
+// ── Topics ────────────────────────────────────────────────────────────────────
+function renderTopics() {
+  const roots = topics.filter((t) => !t.parentId);
+  main.innerHTML = `
+  <div class="card">
+    <h2>All topics — ranked by weakness</h2>
+    <p class="muted">Tap to expand. Tap <b>“I fumbled this”</b> after an interview — it feeds your weakness score and the morning-of gotcha list.</p>
+    ${roots.map((r) => topicBlock(r, true)).join("")}
+  </div>`;
+  main.querySelectorAll(".topicHead").forEach((h) =>
+    h.onclick = () => h.parentElement.classList.toggle("open"));
+  main.querySelectorAll("[data-fumble]").forEach((b) =>
+    b.onclick = (e) => {
+      e.stopPropagation();
+      appendFumble(store, b.dataset.fumble);
+      b.textContent = "✓ recorded";
+      b.disabled = true;
+    });
+}
+
+function topicBlock(t, isRoot) {
+  const kids = childrenOf(topics, t.id);
+  const w = wk(t.id);
+  return `
+  <div class="topic ${isRoot ? "" : "child"}">
+    <div class="topicHead">
+      <span class="topicName">${isRoot ? "" : "· "}${esc(t.name)}</span>
+      <span class="badges">
+        <span class="wk" style="color:${wkColor(w)}">${w}%</span>
+        <span class="badge">ask ${(t.askProb * 100).toFixed(0)}%</span>
+        <button class="small" data-fumble="${t.id}">I fumbled this</button>
+      </span>
+    </div>
+    <div class="body">
+      ${t.gotchas ? "Gotchas:<ul>" + t.gotchas.map((g) => `<li class="gotcha">${esc(g)}</li>`).join("") + "</ul>" : ""}
+      <span class="muted">est. ${t.estTimeMin} min · ${esc(t.seniorityMin)}+</span>
+    </div>
+    ${kids.map((k) => topicBlock(k, false)).join("")}
+  </div>`;
+}
+
+// ── Morning-Of ───────────────────────────────────────────────────────────────
+function renderMorning() {
+  const last = (store.interviews || [])[store.interviews.length - 1] ||
+    { roleTags: ["BACKEND"], seniority: "SENIOR" };
+  const items = gotchaList(topics, store.reviews, store.fumbles, last, 10);
+  main.innerHTML = `
+  <div class="card">
+    <h2>⏰ 30-minute panic list</h2>
+    <p class="muted">No reading new material. Only your recent failures and the highest-probability gotchas.</p>
+    ${items.length === 0 ? "<p class='muted'>Nothing yet — record fumbles on Topics and they'll appear here.</p>" :
+      items.map((i) => {
+        const t = topicById(i.topicId);
+        return `
+        <div class="planItem">
+          <div>
+            <div class="topicName">${esc(t ? t.name : i.topicId)}</div>
+            <div class="reason">${esc(i.reason)}</div>
+            <ul>${(t && t.gotchas ? t.gotchas : []).map((g) => `<li class="gotcha">${esc(g)}</li>`).join("")}</ul>
+          </div>
+          <div class="planMeta"><span class="alloc">${i.allocMin} min</span></div>
+        </div>`;
+      }).join("")}
+  </div>`;
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function renderSettings() {
+  main.innerHTML = `
+  <div class="card">
+    <h2>Your data</h2>
+    <p class="muted">Everything (reviews, fumbles, interviews) lives only in this browser. Export regularly — it's your backup and your way to move data to another device.</p>
+    <button class="primary" id="exp">⬇ Export my data (JSON)</button>
+    <label>Import a backup</label>
+    <input type="file" id="imp" accept="application/json">
+    <div id="impMsg" class="muted"></div>
+  </div>
+  <div class="card">
+    <h2>Danger zone</h2>
+    <button class="small" id="reset">Erase all my data</button>
+  </div>`;
+  main.querySelector("#exp").onclick = () => exportStore(store);
+  main.querySelector("#imp").onchange = async (e) => {
+    const text = await e.target.files[0].text();
+    const res = importStore(store, text);
+    main.querySelector("#impMsg").textContent =
+      res.ok ? `Imported — merged ${res.merged} reviews.` : res.error;
+  };
+  main.querySelector("#reset").onclick = () => {
+    if (confirm("Erase ALL your revision history in this browser? This cannot be undone.")) {
+      localStorage.removeItem("jih:store");
+      store = load();
+      route();
+    }
+  };
+}
+
+boot();
+</script>
 </body>
 </html>

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "topicId": "streams",
+  "title": "Streams & Lambdas",
+  "recap": [
+    "A stream is a pipeline, not a container: source → zero or more intermediate ops (lazy) → one terminal op (triggers everything). No terminal op = nothing executes — the #1 'why didn't my code run' bug.",
+    "Intermediate ops: map, filter, flatMap, sorted, distinct, peek, limit, skip. Terminal ops: forEach, collect, reduce, count, findFirst, anyMatch, toArray. Intermediate ops return a new stream; calling one on a consumed stream throws IllegalStateException.",
+    "Lazy + short-circuiting: findFirst/anyMatch/limit stop pulling elements as soon as the answer is known — filter(map(x)).findFirst() processes only ONE element end-to-end, not the whole list.",
+    "Collectors: toList(), joining(), groupingBy(), partitioningBy(), counting(), summingInt(), mapping(). groupingBy + downstream collector is the workhorse of 'group X and aggregate Y' interview questions.",
+    "flatMap flattens nested structures: list of lists → list, or string → characters. Rule of thumb: map transforms 1:1, flatMap transforms 1-to-many.",
+    "Parallel streams split work across the shared ForkJoinPool.commonPool(). Parallel ≠ faster: only large, CPU-bound, easily-splittable sources benefit; small or I/O-bound work gets slower, and blocking inside a parallel stream starves the whole JVM's shared pool."
+  ],
+  "standard": [
+    "Laziness in practice: intermediate ops build a recipe; the terminal op walks the source element-by-element through the whole pipeline (vertical execution, not op-by-op horizontal batches). That's why peek() between stages shows elements flowing one at a time — a great way to demo understanding in interviews.",
+    "Stateful vs stateless intermediate ops: filter/map are stateless (each element independent); sorted/distinct/skip/limit are stateful — they must buffer or track everything seen, which breaks short-circuiting benefits and limits parallel efficiency. limit on an unordered parallel source is the classic pathological case.",
+    "groupingBy answers: groupingBy(Person::getCity) → Map<City, List<Person>>; add a downstream: groupingBy(key, counting()) or groupingBy(key, mapping(Person::getName, toList())). partitioningBy is groupingBy with a predicate — always exactly two keys, true/false.",
+    "reduce in three forms: reduce(identity, accumulator), the 3-arg parallel-safe version with a combiner, and the mutable variant collect(supplier, accumulator, combiner) — collect IS reduce for mutable containers; using reduce with a list as identity creates a new list per element (O(n²) disaster).",
+    "Primitive streams exist to avoid boxing: IntStream/LongStream/DoubleStream with sum/average/range. mapToInt etc. convert; boxed() converts back. Summing a million ints via Stream<Integer> is 10x slower than IntStream — know when the boxing tax bites.",
+    "Optional discipline: Optional is a return-type contract, not a field or parameter type. orElse vs orElseGet — orElse eagerly evaluates its argument even when the Optional is present; orElseGet is lazy. This is a favorite gotcha question.",
+    "Effectively final: lambdas can only capture effectively-final locals (the variable, not its value, is captured — no reassignment). Mutating an object the lambda captured is legal but destroys parallel-safety.",
+    "When NOT to stream: checked exceptions inside lambdas are painful (wrap or sneaky-throw), complex multi-step logic with early returns reads better imperatively, and streams that mutate external state (forEach(add)) are an anti-pattern — use collect or a proper reduction."
+  ],
+  "deep": [
+    "Spliterator is the engine: it characterizes the source (SIZED, ORDERED, SORTED...) and splits itself for parallelism. ArrayList's spliterator splits by index into perfect halves; LinkedList's splits poorly (pointer chasing) — which is why parallel stream over LinkedList can be slower than sequential.",
+    "The fusion/short-circuit mechanics: limit(n) on a parallel unordered stream may take ANY n elements (cheap); on an ordered stream it must take the first n (requires coordination). sorted() on a parallel stream must buffer everything — full barrier.",
+    "Collector anatomy: supplier, accumulator, combiner, finisher, and characteristics (CONCURRENT, UNORDERED, IDENTITY_FINISH). Collector.of() lets you build custom collectors; a CONCURRENT collector can accumulate into one shared container in parallel instead of merging partials.",
+    "Why Stream is single-use by design: streams are tied to their source and a traversal state; allowing reuse would require either copying or complex reset semantics. IllegalStateException 'stream has already been operated upon' is the contract, not a bug.",
+    "flatMap laziness detail: streams returned by flatMap are closed as each element is consumed — resource streams (Files.lines) inside flatMap need try-with-resources INSIDE the lambda or you leak file handles. Files.lines itself must be closed or the handle leaks — a production-grade gotcha.",
+    "Parallel stream fork/join reality: the common pool has N-1 threads (N = cores); the CALLING thread also participates in the computation (it donates itself). That's why a parallel stream inside a thread-pool task can steal your worker.",
+    "Lambdas vs anonymous classes under the hood: lambdas compile to invokedynamic + a synthetic method, instantiated lazily by LambdaMetafactory — not a class per lambda. Consequence: non-capturing lambdas can be cached and reused by the JVM (singleton instances).",
+    "Method reference forms worth naming: static (Integer::parseInt), bound (System.out::println), unbound (String::toUpperCase), constructor (ArrayList::new). Each maps to a functional interface shape; knowing the four forms signals real fluency."
+  ],
+  "gotchas": [
+    "Forgetting the terminal op = nothing runs. filter().map() without collect/forEach is a no-op recipe.",
+    "orElse vs orElseGet: orElse("x") evaluates "x" (and any method call in it) ALWAYS. Use orElseGet(() -> expensive()) for lazy defaults.",
+    "Parallel stream + shared mutable state (forEach(list::add)) = data race. ArrayList isn't thread-safe; use collect(toList()) or ConcurrentCollectors.",
+    "Files.lines() / Stream returned by any resource-backed source must be closed (try-with-resources) — leaking file handles is a real production bug.",
+    "reduce(new ArrayList<>(), List::add, ...) is O(n²) and broken in parallel — that's what collect() is for.",
+    "Sorting a stream of boxed Integers vs int[] — Arrays.sort(int[]) is dual-pivot quicksort; boxed streams pay comparison + boxing costs. Prefer primitive streams in hot paths.",
+    "distinct() uses a full HashSet behind the scenes no matter what — it's not a cheap adjacent-dedup, and on parallel unordered streams it can be surprisingly expensive. On a pre-sorted stream people assume it dedups adjacently; it doesn't — same HashSet cost.",
+  ],
+  "flashcards": [
+    { "q": "Intermediate vs terminal ops?", "a": "Intermediate (map/filter/flatMap) are lazy and return a new stream; terminal (collect/forEach/reduce) trigger execution. No terminal = no work." },
+    { "q": "map vs flatMap?", "a": "map = 1:1 transform; flatMap = 1-to-many, flattening each produced stream into one." },
+    { "q": "Why is findFirst on filter+map fast?", "a": "Lazy vertical execution: elements flow through the entire pipeline one at a time; it stops at the first match." },
+    { "q": "Group employees by city and count them — one line?", "a": "employees.stream().collect(groupingBy(Employee::getCity, counting()))" },
+    { "q": "orElse vs orElseGet?", "a": "orElse evaluates its argument eagerly even when the Optional has a value; orElseGet is lazy (Supplier)." },
+    { "q": "When do parallel streams actually help?", "a": "Large, CPU-bound, cheap-to-split sources (SIZED spliterators like ArrayList/int[]). Not for I/O, not small data, not shared-pool-blocking work." },
+    { "q": "Why is parallel over LinkedList slow?", "a": "Its spliterator splits poorly (pointer chasing, no SIZED split) — poor balance, more overhead than gain." },
+    { "q": "What is a Spliterator?", "a": "Source abstraction that reports characteristics (SIZED, ORDERED...) and trySplit()s itself for parallel decomposition." },
+    { "q": "Why can't a lambda reassign a captured local?", "a": "Captured locals must be effectively final — the lambda captures the variable's value at creation; reassignment would break thread-safety guarantees." },
+    { "q": "reduce vs collect for building a list?", "a": "Always collect — mutable reduction with supplier/accumulator/combiner. reduce with a list identity copies per element (O(n²)) and breaks in parallel." }
+  ]
+}

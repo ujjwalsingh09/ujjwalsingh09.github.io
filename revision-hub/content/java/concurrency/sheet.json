@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "topicId": "concurrency",
+  "title": "Concurrency",
+  "recap": [
+    "Two problems, one discipline: visibility (a write by one thread may never be seen by another) and interleaving (check-then-act and read-modify-write are not atomic). Every Java concurrency tool exists to fix one or both.",
+    "synchronized = mutual exclusion + memory visibility (entry/exit flush and refresh working memory). volatile = visibility and ordering only, NO atomicity — volatile++ is still broken.",
+    "Happens-before is the rulebook: unlock happens-before a later lock on the same monitor; a volatile write happens-before a later volatile read of it; Thread.start()/join() create happens-before edges. If two accesses have no happens-before path, the JVM may reorder and you have a data race.",
+    "ExecutorService is the modern replacement for raw threads: fixed pool, cached pool, or the work-stealing ForkJoinPool.commonPool(). Always shut it down (try-with-resources on ExecutorService since Java 19).",
+    "Prefer composing futures (CompletableFuture.thenApply/thenCombine/allOf) over waiting; the JDK's structured concurrency (Java 21+) makes thread ownership and cancellation explicit.",
+    "Virtual threads (Java 21+): millions of cheap threads blocked on I/O at near-zero cost — they fix blocking, NOT CPU-bound work. Rules: don't pool them, don't pin them (avoid synchronized around long blocking calls pre-Java 24; use ReentrantLock)."
+  ],
+  "standard": [
+    "volatile in one paragraph: writes go straight to main memory and reads bypass CPU caches; the compiler can't reorder across the volatile fence. Perfect for a status flag or double-checked-locking holder, wrong for counters — use AtomicLong/LongAdder instead.",
+    "Double-checked locking done right: declare the field volatile, check-then-lock-then-check-again. The volatile is non-negotiable — without it, another thread can see a half-constructed object due to reordering. (Better: the initialization-on-demand-holder idiom needs no volatile at all.)",
+    "Deadlock recipe: two locks acquired in opposite order by two threads. Prevention is a fixed global lock ordering, tryLock with timeout (ReentrantLock), or shrinking lock scope. Detection: thread dumps show 'Found one Java-level deadlock' — know how to read one.",
+    "CountDownLatch = one-shot gate, await until count hits zero (parallel test setup). CyclicBarrier = reusable rendezvous point (multi-phase computation). Semaphore = bounded permits (rate limiting, resource pools).",
+    "ThreadLocal: thread-private variable, cheap per-thread caching (SimpleDateFormat pre-Java-8-style, request contexts). The senior-level gotcha: in thread POOLS, ThreadLocal values survive the task — clear them in a finally block or you leak memory and bleed state between unrelated requests.",
+    "Atomic classes use CAS (compare-and-swap) CPU instructions — optimistic, lock-free, and they retry on contention. LongAdder beats AtomicLong under heavy write contention by striping counters across cells and summing on read.",
+    "ExecutorService sizing rule of thumb: CPU-bound → N cores + 1; I/O-bound → N cores × (1 + wait/compute ratio) — which is exactly why virtual threads obsolete the formula for I/O workloads.",
+    "CompletableFuture: thenApply (transform result), thenCompose (chain another async op — flatMap), thenCombine (join two independent futures), exceptionally/handle (recovery). Default runs on ForkJoinPool.commonPool() — always pass your own executor for blocking I/O, or you starve the shared pool."
+  ],
+  "deep": [
+    "The Java Memory Model defines what reorderings are legal via happens-before. Data race = two conflicting accesses with no happens-before ordering. A correctly synchronized program behaves as if sequentially consistent; unsynchronized code has NO guarantees at all — not 'stale reads', no reads.",
+    "Why volatile++ is broken: it compiles to load-increment-store, three separate operations; two threads can both load the same value and one increment is lost. AtomicLong's incrementAndGet() is a single CAS loop — atomic by construction.",
+    "AQS (AbstractQueuedSynchronizer) is the chassis under ReentrantLock, Semaphore, CountDownLatch, and ReentrantReadWriteLock: a volatile int state + a CLH queue of parked waiting threads. ReentrantLock's state counts reentrancy; fairness is a flag on whether threads barge past the queue.",
+    "ReentrantLock vs synchronized: interruptible lock acquisition (lockInterruptibly), tryLock with timeout, fair mode, multiple Conditions (a Condition per wait-set, vs one monitor wait-set). synchronized wins on simplicity and JIT biased-locking-era optimizations; anything beyond mutual exclusion → ReentrantLock.",
+    "ForkJoinPool work-stealing: each worker has its own deque, pushes/pops from one end and steals from the other end of idle peers' deques — minimal contention, ideal for divide-and-conquer. commonPool() is shared across the whole JVM: a blocking task in it starves parallel streams and CompletableFuture defaults everywhere.",
+    "Virtual thread mechanics: mounted on a small set of carrier (platform) threads; when a virtual thread blocks on I/O, the JDK unmounts it and the carrier runs another. 'Pinning' = a virtual thread that can't unmount (synchronized block pre-Java 24, native frames) — it holds its carrier hostage. Diagnose with -Djdk.tracePinnedThreads=full.",
+    "Structured concurrency (Java 21+ preview): scope.spawn() makes child tasks members of a scope — if one fails, all are cancelled; the scope doesn't return until all finish. It turns 'shotgun of stray threads' into a tree with ownership, which is the actual fix for cancellation hell.",
+    "Memory visibility subtlety worth dropping in interviews: safe publication requires either final fields, volatile, synchronized, or a properly published immutable object — a mutable object shared without any of these can appear with default field values (zero/null) even after construction."
+  ],
+  "gotchas": [
+    "volatile is NOT atomic. volatile++ loses updates. Counter → AtomicLong/LongAdder.",
+    "Calling get() on a Future immediately after submit() just serializes your work — the parallelism you paid for evaporates. Batch-submit, then collect.",
+    "ThreadLocal in pooled threads leaks: values outlive the task and bleed between requests. Always remove() in finally.",
+    "Blocking calls on ForkJoinPool.commonPool() (parallel streams, default CompletableFuture) starve the whole JVM's shared pool. Pass a dedicated executor.",
+    "Two locks, opposite order = deadlock. Lock ordering discipline or tryLock-timeout; check thread dumps for 'Found one Java-level deadlock'.",
+    "Virtual threads: don't pool them (they're free), and don't pin them — long synchronized blocks inside a virtual thread (pre-Java 24) hold a carrier thread hostage; use ReentrantLock for blocking sections.",
+    "Swallowing InterruptedException (catch and ignore) kills cancellation. Restore the flag: Thread.currentThread().interrupt()."
+  ],
+  "flashcards": [
+    { "q": "volatile vs synchronized in one line?", "a": "volatile = visibility + ordering, no atomicity; synchronized = mutual exclusion + visibility." },
+    { "q": "What is happens-before?", "a": "The JMM's ordering guarantee: if A happens-before B, A's effects are visible to B. No edge = data race, no guarantees." },
+    { "q": "Why is double-checked locking broken without volatile?", "a": "Construction can reorder with the reference assignment — another thread sees a non-null but half-built object." },
+    { "q": "How does ConcurrentHashMap avoid locking on reads?", "a": "Reads are lock-free (volatile Node fields); writes CAS empty bins and synchronize only on the first node of a non-empty bin." },
+    { "q": "CountDownLatch vs CyclicBarrier?", "a": "Latch: one-shot gate, count-down to zero, await blocks. Barrier: reusable rendezvous where parties wait for each other per phase." },
+    { "q": "When does LongAdder beat AtomicLong?", "a": "Under heavy write contention — it stripes counters across cells and sums lazily on read; AtomicLong CAS-retries under contention." },
+    { "q": "What is AQS?", "a": "AbstractQueuedSynchronizer: volatile int state + CLH wait queue — the base of ReentrantLock, Semaphore, CountDownLatch, ReadWriteLock." },
+    { "q": "What is virtual-thread pinning?", "a": "A virtual thread that can't unmount from its carrier (synchronized pre-Java 24, native calls) — blocks the carrier. Diagnose: -Djdk.tracePinnedThreads=full." },
+    { "q": "Executor pool sizing for CPU-bound vs I/O-bound?", "a": "CPU-bound: N cores + 1. I/O-bound: N × (1 + wait/compute). Virtual threads remove the formula for I/O workloads." },
+    { "q": "Correct response to InterruptedException?", "a": "Never swallow it — restore the interrupt flag (Thread.currentThread().interrupt()) or rethrow, so cancellation propagates." }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "topicId": "collections",
+  "title": "Collections & Internals",
+  "recap": [
+    "The big three: List (ordered, allows duplicates), Set (no duplicates), Map (key-value). Queue/Deque for processing order. Choose by the operations you need, not habit.",
+    "ArrayList = backed by a resizable array → fast random access O(1), slow middle inserts O(n). LinkedList = doubly-linked nodes → fast head/tail ops, O(n) access — almost never the right choice in practice (ArrayList beats it even for many insert-heavy workloads due to cache locality).",
+    "HashMap is THE interview favorite: buckets in an array, hash & spread the key, collision → chain the entries (Java 8+ converts a long chain to a red-black tree when a bucket hits 8 entries and the table is ≥ 64 long, back to a list at 6).",
+    "TreeMap / TreeSet: red-black tree, O(log n) everything, keys in sorted order. LinkedHashMap: hash map + insertion/access order list — its access-order mode is literally how you build an LRU cache.",
+    "Fail-fast iterators throw ConcurrentModificationException if the collection is structurally modified during iteration. Concurrent collections (CopyOnWriteArrayList, ConcurrentHashMap) are fail-safe instead — they iterate over a snapshot and never throw."
+  ],
+  "standard": [
+    "equals/hashCode contract: equal objects MUST have equal hash codes; unequal hash codes must mean unequal objects. If you break it, hash collections can't find your object — HashMap does hash first, then equals to confirm.",
+    "HashMap resizing: when size passes capacity × loadFactor (default 0.75), the table doubles (cap grows by powers of two). Java 8 reshuffling reuses the extra hash bit — entries stay in their old bucket or move to old index + oldCapacity, no rehash of keys needed.",
+    "Why capacity is a power of two: index = (n-1) & hash — a fast modulo via bitmask, after the spread function (h ^ h>>>16) mixes high bits down so high bits of the hash matter too.",
+    "ConcurrentHashMap (Java 8+): no more segment locks — CAS on empty bins, synchronized only on the FIRST node of a non-empty bin. Reads are lock-free. size() is an estimate from counter cells, not an exact instantaneous count.",
+    "CopyOnWriteArrayList: every write copies the whole array — reads are lock-free and snapshot-consistent. Use only when reads vastly outnumber writes (listener registries are the textbook case).",
+    "Immutable + final fields make the best map keys — mutable keys are a real bug: change a key's field after insertion and it lands in the wrong bucket, effectively lost.",
+    "ArrayDeque over Stack (legacy, synchronized) and over LinkedList-as-queue: it's the fastest Deque for single-threaded use — no per-node allocation overhead.",
+    "PriorityQueue: binary heap over an array — O(log n) offer/poll, O(1) peek. Not sorted overall, only the head is guaranteed min/max. Back it with a Comparator; never rely on natural order for business objects."
+  ],
+  "deep": [
+    "Treeify thresholds: TREEIFY_THRESHOLD is 8, but only when table capacity ≥ MIN_TREEIFY_CAPACITY (64) — below that, HashMap prefers a resize instead of treeifying, because with few buckets a long chain is usually hash clustering, not an attack.",
+    "Red-black tree in HashMap buckets keeps a fallback next-pointer chain so it can still behave as a linked list for iteration order stability and degrade gracefully.",
+    "The tie-breaker in tree insertion: when hashes are equal and keys aren't Comparable, HashMap uses identity hash (System.identityHashCode) plus a special tie-break node to force a total order — a rare detail that scores serious points.",
+    "ConcurrentHashMap's sizeCtl field does triple duty: negative = someone is initializing or resizing; other threads that hit a forwarding node during resize help transfer bins — 'helping' is why CHM resizes stay fast under contention.",
+    "Iteration cost model: array-backed collections iterate with cache-friendly locality; pointer-chasing linked structures cause a cache miss per node — LinkedList iteration can be an order of magnitude slower than ArrayList for the same size, which is why 'LinkedList is better for iteration' is backwards.",
+    "Arrays.asList returns a fixed-size view backed by the original array — set() works, add() throws. List.of gives true immutability and forbids nulls (List.of(null) throws NPE, Arrays.asList(null-containing) doesn't).",
+    "SubList views: list.subList() is a live view — structural changes to the backing list make the view undefined, and in practice it throws ConcurrentModificationException on use. Detach with new ArrayList<>(sub).",
+    "Sorting under the hood: Arrays.sort on primitives is dual-pivot quicksort; for objects (and Collections.sort) it's TimSort — a mergesort optimized for partially-sorted data. Stable, O(n log n) worst case, brilliant on real-world data."
+  ],
+  "gotchas": [
+    "Changing a key after putting it in a HashMap = the entry becomes unreachable. Mutable keys are the #1 HashMap footgun.",
+    "Arrays.asList → fixed-size; List.of / Map.of → truly immutable AND null-hostile. Know which one you're holding.",
+    "Modifying a collection while iterating over it throws ConcurrentModificationException — even single-threaded. Use Iterator.remove(), removeIf(), or a concurrent collection.",
+    "Stack extends Vector (synchronized, legacy, inherits get() by index — a stack with random access is a design smell). Deque/ArrayDeque is the modern answer.",
+    "PriorityQueue's iterator does NOT return elements in priority order — only poll() respects the heap.",
+    "LoadFactor near 1 saves memory but wrecks lookup times (long chains); near 0.5 wastes half the array. 0.75 is the empirically sweet spot."
+  ],
+  "flashcards": [
+    { "q": "When does a HashMap bucket become a tree?", "a": "When a chain reaches 8 entries AND table capacity ≥ 64; below 64 it resizes instead. Reverts to a list at 6." },
+    { "q": "Why must capacity be a power of two?", "a": "Index = (n-1) & hash — bitmask modulo. Combined with the spread function mixing high bits down." },
+    { "q": "equals/hashCode contract in one line?", "a": "Equal objects must have equal hash codes — hash first, equals to confirm; break it and lookups fail." },
+    { "q": "How does Java 8+ ConcurrentHashMap lock?", "a": "No segment locks: CAS on empty bins; synchronized on the first node of a non-empty bin. Reads are lock-free; size() is an estimate." },
+    { "q": "When is LinkedList actually the right choice?", "a": "Almost never — ArrayList wins on cache locality even for insert-heavy cases. For head/tail ops, ArrayDeque usually beats it too." },
+    { "q": "How do you build an LRU cache from the JDK alone?", "a": "new LinkedHashMap<>(cap, 0.75f, true) with removeEldestEntry overridden — access-order mode does the eviction." },
+    { "q": "Why is PriorityQueue's iteration order 'wrong'?", "a": "It's a heap: only the head is guaranteed min. The iterator walks the backing array, not the priority." },
+    { "q": "What does CopyOnWriteArrayList cost?", "a": "Every write copies the entire array — O(n) per mutation. Perfect for read-mostly listener registries, terrible for write-heavy use." },
+    { "q": "subList gotcha?", "a": "It's a live view: structurally modify the backing list and the subList becomes undefined (throws CME). Copy it out to detach." },
+    { "q": "TimSort vs dual-pivot quicksort — who sorts what?", "a": "Arrays.sort on primitives = dual-pivot quicksort; objects / Collections.sort = TimSort (stable, superb on partially-sorted input)." }
+  ]
+}
